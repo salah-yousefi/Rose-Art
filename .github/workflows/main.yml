@@ -18,15 +18,27 @@ jobs:
         run: |
           mkdir -p www/fonts
           cp index.html www/index.html
-          rm -f assets/icon.png
           npm init -y
-          npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @capacitor/assets @fontsource/vazirmatn
+          npm i @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6 @capacitor/filesystem@6 @fontsource/vazirmatn
           cp node_modules/@fontsource/vazirmatn/files/vazirmatn-arabic-*-normal.woff2 www/fonts/
           npx cap init "Rose Art" com.rozart.accounting --web-dir=www
           npx cap add android
           sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n<application#' android/app/src/main/AndroidManifest.xml
-          npx capacitor-assets generate --android
           npx cap sync android
+      - name: Icons
+        run: |
+          IO=$(find . -name icon-only.png -not -path './node_modules/*' -not -path './android/*' | head -1)
+          IFG=$(find . -name icon-foreground.png -not -path './node_modules/*' -not -path './android/*' | head -1)
+          if [ -z "$IO" ] || [ -z "$IFG" ]; then echo "icon files not found"; exit 1; fi
+          echo "using $IO and $IFG"
+          R=android/app/src/main/res
+          for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
+            n=${d%%:*}; rest=${d#*:}; s=${rest%%:*}; f=${rest#*:}; h=$((s/2))
+            convert "$IO" -resize ${s}x${s} $R/mipmap-$n/ic_launcher.png
+            convert "$IO" -resize ${s}x${s} \( -size ${s}x${s} xc:none -fill white -draw "circle $h,$h $h,0" \) -compose copy_opacity -composite $R/mipmap-$n/ic_launcher_round.png
+            convert "$IFG" -resize ${f}x${f} $R/mipmap-$n/ic_launcher_foreground.png
+          done
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#F1E2CC</color>\n</resources>\n' > $R/values/ic_launcher_background.xml
       - name: Build
         run: |
           sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
