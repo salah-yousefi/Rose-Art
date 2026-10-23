@@ -31,14 +31,25 @@ jobs:
           IFG=$(find . -name icon-foreground.png -not -path './node_modules/*' -not -path './android/*' | head -1)
           if [ -z "$IO" ] || [ -z "$IFG" ]; then echo "icon files not found"; exit 1; fi
           echo "using $IO and $IFG"
-          R=android/app/src/main/res
-          for d in mdpi:48:108 hdpi:72:162 xhdpi:96:216 xxhdpi:144:324 xxxhdpi:192:432; do
-            n=${d%%:*}; rest=${d#*:}; s=${rest%%:*}; f=${rest#*:}; h=$((s/2))
-            convert "$IO" -resize ${s}x${s} $R/mipmap-$n/ic_launcher.png
-            convert "$IO" -resize ${s}x${s} \( -size ${s}x${s} xc:none -fill white -draw "circle $h,$h $h,0" \) -compose copy_opacity -composite $R/mipmap-$n/ic_launcher_round.png
-            convert "$IFG" -resize ${f}x${f} $R/mipmap-$n/ic_launcher_foreground.png
-          done
-          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#F1E2CC</color>\n</resources>\n' > $R/values/ic_launcher_background.xml
+          npm i sharp
+          cat > icons.js <<'EOF'
+          const sharp = require('sharp');
+          const io = process.argv[2], ifg = process.argv[3];
+          const R = 'android/app/src/main/res';
+          const sizes = { mdpi: [48, 108], hdpi: [72, 162], xhdpi: [96, 216], xxhdpi: [144, 324], xxxhdpi: [192, 432] };
+          (async () => {
+            for (const [n, [s, f]] of Object.entries(sizes)) {
+              const d = R + '/mipmap-' + n;
+              await sharp(io).resize(s, s).png().toFile(d + '/ic_launcher.png');
+              const mask = Buffer.from('<svg width="' + s + '" height="' + s + '"><circle cx="' + s / 2 + '" cy="' + s / 2 + '" r="' + s / 2 + '"/></svg>');
+              await sharp(io).resize(s, s).composite([{ input: mask, blend: 'dest-in' }]).png().toFile(d + '/ic_launcher_round.png');
+              await sharp(ifg).resize(f, f).png().toFile(d + '/ic_launcher_foreground.png');
+            }
+            console.log('icons done');
+          })().catch(e => { console.error(e); process.exit(1); });
+          EOF
+          node icons.js "$IO" "$IFG"
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#F1E2CC</color>\n</resources>\n' > android/app/src/main/res/values/ic_launcher_background.xml
       - name: Build
         run: |
           sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
